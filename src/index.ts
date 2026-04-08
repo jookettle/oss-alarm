@@ -1,6 +1,7 @@
 export interface Env {
   ISSUE_KV: KVNamespace;
   DISCORD_WEBHOOK_URL: string;
+  GITHUB_TOKEN: string;
 }
 
 interface GitHubIssue {
@@ -25,7 +26,8 @@ export default {
       const response = await fetch(GITHUB_API_URL, {
         headers: {
           "User-Agent": "Cloudflare-Worker-OSS-Alarm-TS",
-          "Accept": "application/vnd.github.v3+json"
+          "Accept": "application/vnd.github.v3+json",
+          "Authorization": `Bearer ${env.GITHUB_TOKEN}`
         }
       });
 

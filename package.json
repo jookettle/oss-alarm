@@ -1,0 +1,29 @@
+{
+  "name": "oss-alarm",
+  "version": "1.0.0",
+  "description": "\"그\" 강의를 위해서 issue 발생시 자동으로 디스코드로 전송해주는 간단한 프로젝트",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jookettle/oss-alarm.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jookettle/oss-alarm/issues"
+  },
+  "homepage": "https://github.com/jookettle/oss-alarm#readme",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260408.1",
+    "typescript": "^6.0.2",
+    "wrangler": "^4.81.0"
+  }
+}

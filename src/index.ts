@@ -11,6 +11,7 @@ interface GitHubIssue {
   state: string;
   user: {
     login: string;
+    avatar_url: string;
   };
   created_at: string;
 }
@@ -47,6 +48,8 @@ export default {
         console.log(`New issue detected: ${latestIssue.title} (ID: ${latestIssueId})`);
 
         const discordPayload = {
+          username: latestIssue.user.login,
+          avatar_url: latestIssue.user.avatar_url,
           embeds: [{
             title: `🚨 새로운 이슈 등록: ${latestIssue.title}`,
             url: latestIssue.html_url,

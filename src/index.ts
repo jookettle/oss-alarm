@@ -2,6 +2,7 @@ export interface Env {
   ISSUE_KV: KVNamespace;
   DISCORD_WEBHOOK_URL: string;
   GITHUB_TOKEN: string;
+  MIN_FETCH_INTERVAL_SECONDS?: string;
 }
 
 interface GitHubIssue {
@@ -70,17 +71,46 @@ export default {
     const GITHUB_API_URL = `https://api.github.com/repos/${REPO}/issues?state=all&per_page=10&sort=created&direction=desc`;
 
     try {
-      const response = await fetch(GITHUB_API_URL, {
-        headers: {
-          "User-Agent": "Cloudflare-Worker-OSS-Alarm-TS",
-          "Accept": "application/vnd.github.v3+json",
-          "Authorization": `Bearer ${env.GITHUB_TOKEN}`
+      // Respect a minimum interval between actual GitHub requests to help avoid rate limit bursts.
+      const minIntervalMs = env.MIN_FETCH_INTERVAL_SECONDS ? Number(env.MIN_FETCH_INTERVAL_SECONDS) * 1000 : 5 * 60 * 1000; // default 5 minutes
+      const lastFetch = await env.ISSUE_KV.get("LAST_FETCH_TS");
+      if (lastFetch) {
+        const lastTs = Number(lastFetch);
+        if (!Number.isNaN(lastTs) && Date.now() - lastTs < minIntervalMs) {
+          console.log(`Skipping GitHub fetch; last fetch ${Date.now() - lastTs}ms ago.`);
+          return;
         }
-      });
+      }
+
+      // Use conditional requests with ETag to avoid counting against rate limits when unchanged.
+      const headers: Record<string, string> = {
+        "User-Agent": "Cloudflare-Worker-OSS-Alarm-TS",
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": `Bearer ${env.GITHUB_TOKEN}`
+      };
+      const savedEtag = await env.ISSUE_KV.get("ISSUES_ETAG");
+      if (savedEtag) headers["If-None-Match"] = savedEtag;
+
+      const response = await fetch(GITHUB_API_URL, { headers });
+
+      // 304 Not Modified => nothing changed; update last fetch timestamp and exit without processing.
+      if (response.status === 304) {
+        console.log("GitHub: Not modified (304). Skipping processing.");
+        await env.ISSUE_KV.put("LAST_FETCH_TS", Date.now().toString());
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`GitHub API returned ${response.status}: ${await response.text()}`);
       }
+
+      const newEtag = response.headers.get("etag");
+      if (newEtag) {
+        await env.ISSUE_KV.put("ISSUES_ETAG", newEtag);
+      }
+
+      // Update last fetch timestamp for successful fetch
+      await env.ISSUE_KV.put("LAST_FETCH_TS", Date.now().toString());
 
       const issues = (await response.json()) as GitHubIssue[];
       if (!issues || issues.length === 0) {
@@ -123,10 +153,10 @@ export default {
           username: latestIssue.user.login,
           avatar_url: latestIssue.user.avatar_url,
           embeds: [{
-            title: `새로운 이슈 등록: ${latestIssue.title}`,
+            title: `${latestIssue.title}`,
             url: latestIssue.html_url,
             color: 0xE67E22,
-            description: `**작성자:** ${latestIssue.user.login}\n**이슈 번호:** #${latestIssue.number}\n\n${latestIssue.body ? latestIssue.body.substring(0, 200) + (latestIssue.body.length > 200 ? "..." : "") : "설명 없음"}`,
+            description: `**이슈 번호:** > #${latestIssue.number}\n\n----\n${latestIssue.body ? latestIssue.body.substring(0, 200) + (latestIssue.body.length > 200 ? "..." : "") : "설명 없음"}`,
             fields: fields,
             footer: { 
               text: `Repo: ${REPO}`,
@@ -164,9 +194,15 @@ export default {
           // If the issue already has one or more comments, send an additional '<선점됨>' message
           if (latestIssue.comments && latestIssue.comments >= 1) {
             const reservePayload = {
-              content: "<선점됨>",
               username: latestIssue.user.login,
-              avatar_url: latestIssue.user.avatar_url
+              avatar_url: latestIssue.user.avatar_url,
+              embeds: [{
+                title: "[선점됨]",
+                description: `이슈 #${latestIssue.number} - ${latestIssue.title}`,
+                url: latestIssue.html_url,
+                color: 0x95A5A6,
+                timestamp: new Date().toISOString()
+              }]
             };
 
             const reserveResponse = await fetch(env.DISCORD_WEBHOOK_URL, {
@@ -178,7 +214,7 @@ export default {
             if (!reserveResponse.ok) {
               console.error("Reserve message failed:", await reserveResponse.text());
             } else {
-              console.log("Sent '<선점됨>' message because issue has comments.");
+              console.log("Sent embed '[선점됨]' message because issue has comments.");
             }
           }
         }

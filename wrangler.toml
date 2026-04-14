@@ -5,10 +5,11 @@ compatibility_date = "2024-04-03"
 [vars]
 # DISCORD_WEBHOOK_URL should be set via `wrangler secret put DISCORD_WEBHOOK_URL`
 # GITHUB_TOKEN should be set via `wrangler secret put GITHUB_TOKEN`
+MIN_FETCH_INTERVAL_SECONDS = "60" # 1 minute (in seconds)
 
 [[kv_namespaces]]
 binding = "ISSUE_KV"
 # id = "USER_MUST_FILL_THIS_AFTER_CREATING_KV"
 
 [[triggers]]
-crons = ["*/5 * * * *"]
+crons = ["*/1 * * * *"]

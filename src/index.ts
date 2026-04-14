@@ -11,6 +11,7 @@ interface GitHubIssue {
   body: string; // added body
   html_url: string;
   state: string;
+  comments: number;
   user: {
     login: string;
     avatar_url: string;
@@ -33,8 +34,8 @@ function parseIssueBody(body: string | null): { [key: string]: string } {
     "Describe the bug",
     "Describe the solution",
     "변경사항",
-    "🧪 테스트 방법",
-    "💬 참고 사항",
+    "테스트 방법",
+    "참고 사항",
     "Additional context"
   ];
 
@@ -66,7 +67,6 @@ function parseIssueBody(body: string | null): { [key: string]: string } {
 export default {
   async scheduled(event: ScheduledEvent | null, env: Env, ctx: ExecutionContext): Promise<void> {
     const REPO = "oss2026hnu/reposcore-cs";
-    // 요청 수를 늘려 최근 항목 중 PR이 아닌 첫번째 Issue를 찾습니다.
     const GITHUB_API_URL = `https://api.github.com/repos/${REPO}/issues?state=all&per_page=10&sort=created&direction=desc`;
 
     try {
@@ -123,7 +123,7 @@ export default {
           username: latestIssue.user.login,
           avatar_url: latestIssue.user.avatar_url,
           embeds: [{
-            title: `🚨 새로운 이슈 등록: ${latestIssue.title}`,
+            title: `새로운 이슈 등록: ${latestIssue.title}`,
             url: latestIssue.html_url,
             color: 0xE67E22,
             description: `**작성자:** ${latestIssue.user.login}\n**이슈 번호:** #${latestIssue.number}\n\n${latestIssue.body ? latestIssue.body.substring(0, 200) + (latestIssue.body.length > 200 ? "..." : "") : "설명 없음"}`,
@@ -160,6 +160,27 @@ export default {
         } else {
           await env.ISSUE_KV.put("LAST_ISSUE_ID", latestIssueId);
           console.log("Successfully notified Discord and updated KV.");
+
+          // If the issue already has one or more comments, send an additional '<선점됨>' message
+          if (latestIssue.comments && latestIssue.comments >= 1) {
+            const reservePayload = {
+              content: "<선점됨>",
+              username: latestIssue.user.login,
+              avatar_url: latestIssue.user.avatar_url
+            };
+
+            const reserveResponse = await fetch(env.DISCORD_WEBHOOK_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(reservePayload)
+            });
+
+            if (!reserveResponse.ok) {
+              console.error("Reserve message failed:", await reserveResponse.text());
+            } else {
+              console.log("Sent '<선점됨>' message because issue has comments.");
+            }
+          }
         }
       } else {
         console.log("No new issues since last check.");

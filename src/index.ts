@@ -16,6 +16,8 @@ interface GitHubIssue {
     avatar_url: string;
   };
   created_at: string;
+  // If this field exists the item is a Pull Request, not a plain issue
+  pull_request?: unknown;
 }
 
 /**
@@ -64,7 +66,8 @@ function parseIssueBody(body: string | null): { [key: string]: string } {
 export default {
   async scheduled(event: ScheduledEvent | null, env: Env, ctx: ExecutionContext): Promise<void> {
     const REPO = "oss2026hnu/reposcore-cs";
-    const GITHUB_API_URL = `https://api.github.com/repos/${REPO}/issues?state=all&per_page=1&sort=created&direction=desc`;
+    // 요청 수를 늘려 최근 항목 중 PR이 아닌 첫번째 Issue를 찾습니다.
+    const GITHUB_API_URL = `https://api.github.com/repos/${REPO}/issues?state=all&per_page=10&sort=created&direction=desc`;
 
     try {
       const response = await fetch(GITHUB_API_URL, {
@@ -85,7 +88,15 @@ export default {
         return;
       }
 
-      const latestIssue = issues[0];
+      // GitHub의 /issues 엔드포인트는 Pull Request도 함께 반환합니다.
+      // `pull_request` 필드가 있으면 PR이므로 제외하고 첫 번째 Issue를 선택합니다.
+      const nonPrIssues = issues.filter(i => !(i as any).pull_request);
+      if (!nonPrIssues || nonPrIssues.length === 0) {
+        console.log("No issues (excluding PRs) found in the recent items.");
+        return;
+      }
+
+      const latestIssue = nonPrIssues[0];
       const latestIssueId = latestIssue.id.toString();
 
       const lastCheckedId = await env.ISSUE_KV.get("LAST_ISSUE_ID");
